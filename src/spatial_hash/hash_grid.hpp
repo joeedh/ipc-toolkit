@@ -13,9 +13,6 @@
 // TODO: Implementing a more parallel or integrating the original spatial hash
 // is an important goal in order to increase performance.
 // #define IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
-#ifdef IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
-#include <tbb/concurrent_vector.h>
-#endif
 
 namespace ipc {
 
@@ -36,9 +33,7 @@ public:
     }
 
     AABB(const AABB& aabb1, const AABB& aabb2)
-        : AABB(
-              aabb1.min.array().min(aabb2.min.array()),
-              aabb1.max.array().max(aabb2.max.array()))
+        : AABB(aabb1.min.cwiseMin(aabb2.min), aabb1.max.cwiseMax(aabb2.max))
     {
     }
 
@@ -65,6 +60,9 @@ public:
     AABB aabb; /// @brief The axis-aligned bounding box of the element
 
     /// @brief Construct a hash item as a (key, value) pair.
+    HashItem() {}
+
+    /// @brief Construct a hash item as a (key, value) pair.
     HashItem(int key, int id, const AABB aabb)
         : key(key)
         , id(id)
@@ -82,12 +80,7 @@ public:
     }
 };
 
-#ifdef IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
-// TODO: This may be less efficient than a std::vector
-typedef tbb::concurrent_vector<HashItem> HashItems;
-#else
 typedef std::vector<HashItem> HashItems;
-#endif
 
 class HashGrid {
 public:
@@ -180,8 +173,20 @@ public:
     }
 
 protected:
+    void AABB_to_cells(
+        const AABB& aabb,
+        Eigen::VectorX3i& cell_min,
+        Eigen::VectorX3i& cell_max);
+
+    /// @brief Add an AABB of the extents to the hash grid.
+    int countNewItems(const AABB& aabb);
+
     /// @brief Add an AABB of the extents to the hash grid.
     void addElement(const AABB& aabb, const int id, HashItems& items);
+
+    /// @brief Add an AABB of the extents to the hash grid.
+    void insertElement(
+        const AABB& aabb, const int id, HashItems& items, size_t start_i);
 
     /// @brief Create the hash of a cell location.
     inline long hash(int x, int y, int z) const
@@ -193,7 +198,6 @@ protected:
         return (z * m_gridSize[1] + y) * m_gridSize[0] + x;
     }
 
-protected:
     double m_cellSize;
     Eigen::VectorX3i m_gridSize;
     Eigen::VectorX3d m_domainMin;
