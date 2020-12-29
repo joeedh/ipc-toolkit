@@ -12,7 +12,7 @@
 // commented out.
 // TODO: Implementing a more parallel or integrating the original spatial hash
 // is an important goal in order to increase performance.
-// #define IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
+#define IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
 
 namespace ipc {
 

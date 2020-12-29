@@ -4,6 +4,7 @@
 
 #ifdef IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
 #include <tbb/parallel_for.h>
+#include <tbb/concurrent_unordered_set.h>
 #endif
 #include <tbb/parallel_sort.h> // Still use this even if TBB is disabled
 
@@ -141,7 +142,7 @@ void HashGrid::addVertices(
     aabbs.reserve(vertices_t0.rows());
 
     size_t num_items = m_vertexItems.size();
-    for (long i = 0; i < vertices_t0.rows(); i++) {
+    for(long i = 0; i < vertices_t0.rows(); i++) {
         Eigen::VectorX3d lower_bound, upper_bound;
         calculate_vertex_extents(
             vertices_t0.row(i), vertices_t1.row(i), lower_bound, upper_bound);
@@ -150,7 +151,7 @@ void HashGrid::addVertices(
                 lower_bound.array() - inflation_radius,
                 upper_bound.array() + inflation_radius),
             num_items);
-        num_items += countNewItems(aabbs.back().first);
+        num_items += countNewItems(aabbs[i].first);
     }
     m_vertexItems.resize(num_items);
 
@@ -305,6 +306,8 @@ void HashGrid::addFaces(
     timer.start();
     assert(vertices_t0.rows() == vertices_t1.rows());
 
+    std::cout << faces.rows() << std::endl;
+
 #ifndef IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
     for (long i = 0; i < faces.rows(); i++) {
         addFace(
@@ -316,7 +319,7 @@ void HashGrid::addFaces(
 #else
     // A vector of AABBs and where they start in the face items
     std::vector<std::pair<AABB, int>> aabbs;
-    aabbs.reserve(vertices_t0.rows());
+    aabbs.reserve(faces.rows());	
 
     size_t num_items = m_faceItems.size();
     for (long i = 0; i < faces.rows(); i++) {
@@ -333,7 +336,9 @@ void HashGrid::addFaces(
             num_items);
         num_items += countNewItems(aabbs.back().first);
     }
-    m_faceItems.reserve(num_items);
+    m_faceItems.resize(num_items);
+    std::cout << num_items << std::endl;
+    std::cout << aabbs.size() << std::endl;
 
     tbb::parallel_for(0l, long(faces.rows()), [&](long i) {
         insertElement(aabbs[i].first, i, m_faceItems, aabbs[i].second);
@@ -453,6 +458,7 @@ template <typename Candidates>
 void getPairs(
     const std::function<bool(int, int)>& is_endpoint,
     const std::function<bool(int, int)>& is_same_group,
+    const std::function<long(const typename Candidates::value_type&)>& hash,
     HashItems& items,
     Candidates& candidates)
 {
@@ -462,8 +468,8 @@ void getPairs(
     igl::Timer timer;
     timer.start();
 
-#ifdef IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
-    std::vector<int> cell_starts;
+//#ifdef IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
+/*    std::vector<int> cell_starts;
     int prev_key = -1;
     for (int i = 0; i < items.size(); i++) {
         if (items[i].key != prev_key) {
@@ -473,7 +479,9 @@ void getPairs(
     }
     cell_starts.push_back(items.size()); // extra cell start for the end
 
-    std::vector<Candidates> cell_candidates(cell_starts.size() - 1);
+    tbb::concurrent_unordered_set<typename Candidates::value_type, decltype(hash)> 
+     	    candidate_set(776983, hash);
+    //std::vector<Candidates> cell_candidates(cell_starts.size() - 1);
     tbb::parallel_for(size_t(0), cell_starts.size() - 1, [&](size_t ci) {
         size_t current_cell = cell_starts[ci], next_cell = cell_starts[ci + 1];
         for (int i = current_cell; i < next_cell; i++) {
@@ -484,27 +492,32 @@ void getPairs(
                 if (!is_endpoint(item0.id, item1.id)
                     && !is_same_group(item0.id, item1.id)
                     && AABB::are_overlaping(item0.aabb, item1.aabb)) {
-                    cell_candidates[ci].emplace_back(item0.id, item1.id);
+                    candidate_set.emplace(item0.id, item1.id);
                 }
             }
         }
     });
 
-    size_t total_candidates = 0;
-    for (const auto& cell_candidate : cell_candidates) {
-        total_candidates += cell_candidate.size();
-    }
-    candidates.reserve(total_candidates);
-    for (const auto& cell_candidate : cell_candidates) {
-        candidates.insert(
-            candidates.end(), cell_candidate.begin(), cell_candidate.end());
-    }
-#else
+    candidates.reserve(candidate_set.size());
+    candidates.insert(candidates.end(), candidate_set.begin(), candidate_set.end());
+
+    //size_t total_candidates = 0;
+    //for (const auto& cell_candidate : cell_candidates) {
+    //    total_candidates += cell_candidate.size();
+    //}
+    //candidates.reserve(total_candidates);
+    //for (const auto& cell_candidate : cell_candidates) {
+    //    candidates.insert(
+    //        candidates.end(), cell_candidate.begin(), cell_candidate.end());
+    //}
+//#else*/
     // Entries with the same key means they share a cell (that cell index
     // hashes to the same key) and should be flagged for low-level intersection
     // testing. So we loop over the entire sorted set of (key,value) pairs
     // creating Candidate entries for pairs with the same key.
-    for (int i = 0; i < items.size(); i++) {
+    tbb::concurrent_unordered_set<typename Candidates::value_type, decltype(hash)>
+            candidate_set(776983, hash);
+    tbb::parallel_for(size_t(0), items.size(), [&](size_t i) {
         const HashItem& item0 = items[i];
         for (int j = i + 1; j < items.size(); j++) {
             const HashItem& item1 = items[j];
@@ -512,27 +525,30 @@ void getPairs(
                 if (!is_endpoint(item0.id, item1.id)
                     && !is_same_group(item0.id, item1.id)
                     && AABB::are_overlaping(item0.aabb, item1.aabb)) {
-                    candidates.emplace_back(item0.id, item1.id);
+                    candidate_set.emplace(item0.id, item1.id);
                 }
             } else {
                 break; // This avoids a brute force comparison
             }
         }
-    }
-#endif
+    });
+
+    candidates.reserve(candidate_set.size());
+    candidates.insert(candidates.end(), candidate_set.begin(), candidate_set.end());
+//#endif
 
     timer.stop();
     std::cout << "find_intersections " << timer.getElapsedTime() << " s"
-              << std::endl;
+              << "\n";
 
-    timer.start();
+    //timer.start();
     // Remove the duplicate candidates
-    tbb::parallel_sort(candidates.begin(), candidates.end());
-    auto new_end = std::unique(candidates.begin(), candidates.end());
-    candidates.erase(new_end, candidates.end());
-    timer.stop();
-    std::cout << "remove_duplicates " << timer.getElapsedTime() << " s"
-              << std::endl;
+    //tbb::parallel_sort(candidates.begin(), candidates.end());
+    //auto new_end = std::unique(candidates.begin(), candidates.end());
+    //candidates.erase(new_end, candidates.end());
+    //timer.stop();
+    //std::cout << "remove_duplicates " << timer.getElapsedTime() << " s"
+    //          << std::endl;
 }
 
 void HashGrid::getVertexEdgePairs(
@@ -568,7 +584,6 @@ void HashGrid::getEdgeEdgePairs(
     std::vector<EdgeEdgeCandidate>& ee_candidates)
 {
     igl::Timer timer;
-    timer.start();
 
     auto is_endpoint = [&](int ei, int ej) {
         return edges(ei, 0) == edges(ej, 0) || edges(ei, 0) == edges(ej, 1)
@@ -584,11 +599,22 @@ void HashGrid::getEdgeEdgePairs(
                 || group_ids(edges(ei, 1)) == group_ids(edges(ej, 1)));
     };
 
-    getPairs(is_endpoint, is_same_group, m_edgeItems, ee_candidates);
+    auto hash = [&](const EdgeEdgeCandidate& candidate) {
+        return std::min(candidate.edge0_index, candidate.edge1_index)
+            * edges.rows()
+            + std::max(candidate.edge0_index, candidate.edge1_index);
+    };
+
+
+    timer.start();
+
+    getPairs(is_endpoint, is_same_group, hash, m_edgeItems, ee_candidates);
+
+    //getPairs(is_endpoint, is_same_group, m_edgeItems, ee_candidates);
 
     timer.stop();
     std::cout << "HashGrid::getEdgeEdgePairs " << timer.getElapsedTime() << " s"
-              << std::endl;
+              << "\n";
 }
 
 void HashGrid::getEdgeFacePairs(
