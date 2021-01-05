@@ -13,6 +13,7 @@
 // TODO: Implementing a more parallel or integrating the original spatial hash
 // is an important goal in order to increase performance.
 #define IPC_TOOLKIT_SPATIAL_HASH_USE_TBB
+// #define IPC_TOOLKIT_SPATIAL_HASH_USE_UNORDERED_SET
 
 namespace ipc {
 
@@ -84,6 +85,11 @@ typedef std::vector<HashItem> HashItems;
 
 class HashGrid {
 public:
+    double cellSize() const { return m_cellSize; }
+    Eigen::VectorX3i gridSize() const { return m_gridSize; }
+    Eigen::VectorX3d domainMin() const { return m_domainMin; }
+    Eigen::VectorX3d domainMax() const { return m_domainMax; }
+
     void resize(Eigen::VectorX3d min, Eigen::VectorX3d max, double cellSize);
 
     void resize(
