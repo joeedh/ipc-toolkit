@@ -488,7 +488,7 @@ void getPairs(
         typename Candidates::value_type, decltype(hash)>
     candidate_set(long(0.1 * items.size()), hash);
 #else
-    std::vector<std::vector<Candidate>> cell_candidates(cell_starts.size() - 1);
+    std::vector<Candidates> cell_candidates(cell_starts.size() - 1);
 #endif
     tbb::parallel_for(size_t(0), cell_starts.size() - 1, [&](size_t ci) {
         size_t current_cell = cell_starts[ci], next_cell = cell_starts[ci + 1];
